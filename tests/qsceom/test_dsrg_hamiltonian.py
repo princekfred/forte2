@@ -1,7 +1,6 @@
 """Tests for the DSRG-only ADAPT-VQE and QSC-EOM entry points."""
 
 import builtins
-import hashlib
 import importlib.util
 import inspect
 from pathlib import Path
@@ -101,7 +100,7 @@ def test_active_electron_count_checked_against_file(tmp_path, algorithms):
         qsceom(path, active_electrons=1, params=[], ash_excitation=[])
 
 
-def test_runner_passes_same_hamiltonian_snapshot(tmp_path, monkeypatch):
+def test_runner_passes_same_hamiltonian_path(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(QSCEOM_DIR))
     runners = sorted(QSCEOM_DIR.parent.glob("**/run_qsceom.py"))
     if not runners:
@@ -120,7 +119,6 @@ def test_runner_passes_same_hamiltonian_snapshot(tmp_path, monkeypatch):
         active_electrons=2,
         relaxed_state_energies=[-1.3],
     )
-    fingerprint = hashlib.sha256(source.read_bytes()).hexdigest()
     runner.HAMILTONIAN_FILE = source
     runner.OUTPUT_FILE = tmp_path / "results.txt"
     runner.ACTIVE_ELECTRONS = 2
@@ -128,14 +126,14 @@ def test_runner_passes_same_hamiltonian_snapshot(tmp_path, monkeypatch):
 
     def fake_adapt(*, dsrg_hamiltonian, adapt_it, active_electrons):
         assert adapt_it == 1 and active_electrons == 2
+        assert dsrg_hamiltonian == source
         with np.load(dsrg_hamiltonian) as data:
             assert float(data["E0"]) == pytest.approx(0.7)
-        # Simulate DSRG replacing the original while ADAPT is running.
-        np.savez(source, E0=99.0, h1=np.eye(2), h2=np.zeros((2, 2, 2, 2)))
         return np.array([]), [], [-1.3]
 
     def fake_qsceom(*, dsrg_hamiltonian, active_electrons, params, ash_excitation, shots):
         assert active_electrons == 2 and shots == 0
+        assert dsrg_hamiltonian == source
         with np.load(dsrg_hamiltonian) as data:
             assert float(data["E0"]) == pytest.approx(0.7)
         return [np.array([-0.6])]
@@ -144,6 +142,22 @@ def test_runner_passes_same_hamiltonian_snapshot(tmp_path, monkeypatch):
     monkeypatch.setattr(runner, "qsceom", fake_qsceom)
     runner.main()
     result = runner.OUTPUT_FILE.read_text()
-    assert fingerprint in result
-    assert "Active spatial orbitals: 2" in result
-    assert "Lowest relaxed DSRG root: -1.300000000000" in result
+    assert "Ground-state energy: -1.300000000000" in result
+    assert "State  1: E = -0.600000000000" in result
+    assert "DSRG root" not in result
+    assert "SHA-256" not in result
+
+
+def test_runner_reports_missing_dsrg_file(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(QSCEOM_DIR))
+    runners = sorted(QSCEOM_DIR.parent.glob("**/run_qsceom.py"))
+    if not runners:
+        pytest.skip("The optional example runner is not present")
+    spec = importlib.util.spec_from_file_location("_test_qsceom_runner_missing", runners[0])
+    runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runner)
+    missing = tmp_path / "n2" / "n2_DSRG_Heff.npz"
+    monkeypatch.setattr(runner, "HAMILTONIAN_FILE", missing)
+    with pytest.raises(FileNotFoundError) as exc:
+        runner.main()
+    assert str(missing) in str(exc.value)

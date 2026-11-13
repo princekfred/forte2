@@ -4,16 +4,17 @@ import numpy as np
 from forte2 import System, RHF, State, CISolver, MCOptimizer
 from forte2.dsrg import DSRG_MRPT2
 
+output_file = Path(__file__).resolve().parent / "n2" / "n2_DSRG_Heff.npz"
+output_file.parent.mkdir(parents=True, exist_ok=True)
+
 # 1. Define molecule and basis set
 system = System(
     xyz="""
-    H 0.0 0.0 0.0
-    H 0.0 0.0 1.5
-    H 0.0 1.5 0.0
-    H 0.0 1.5 1.5
+    N 0.0 0.0 0.0
+    N 0.0 0.0 3.0
     """,
     unit="angstrom",
-    basis_set="sto-3g",
+    basis_set="cc-pVDZ",
     auxiliary_basis_set="cc-pVTZ-JKFIT",
 )
 
@@ -22,10 +23,10 @@ rhf = RHF(charge=0)(system)
 
 # 3. State-averaged active-space calculation
 ci_solver = CISolver(
-    states=State(nel=4, multiplicity=1, ms=0.0),
-    core_orbitals=0,
-    active_orbitals=4,
-    nroots=4,
+    states=State(nel=14, multiplicity=1, ms=0.0),
+    core_orbitals=4,
+    active_orbitals=6,
+    nroots=3,
 )
 
 mcscf = MCOptimizer(ci_solver=ci_solver)(rhf)
@@ -45,7 +46,6 @@ h2 = dsrg.hbar2_canon
 
 
 # 6. Save results for subsequent VQE calculations
-output_file = Path(__file__).resolve().parent / "h4" / "H4_DSRG_Heff.npz"
 sub_solver = dsrg.ci_solver.sub_solvers[0]
 np.savez(
     output_file,
