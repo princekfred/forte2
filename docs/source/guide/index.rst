@@ -8,5 +8,6 @@ User guide
     relativistic
     symmetry
     integrals
+    qsceom
     rdms
     gradients
